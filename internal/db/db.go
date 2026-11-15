@@ -1,50 +1,47 @@
+// Package db opens the GORM connection and applies the schema.
 package db
 
 import (
-	"database/sql"
 	"fmt"
-	"log"
-	"os"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+
+	"edgeaware/internal/models"
 )
 
-func Open() *sql.DB {
-	// Default values match your Docker run command
-	host := getenv("DB_HOST", "localhost")
-	port := getenv("DB_PORT", "5432")
-	user := getenv("DB_USER", "postgres")
-	pass := getenv("DB_PASSWORD", "postgres")
-	name := getenv("DB_NAME", "edgeaware")
-
-	dsn := fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		host, port, user, pass, name,
-	)
-
-	db, err := sql.Open("pgx", dsn)
+// Open connects to Postgres through GORM (pgx driver underneath).
+func Open(dsn string) (*gorm.DB, error) {
+	gdb, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Warn),
+	})
 	if err != nil {
-		log.Fatalf("db open failed: %v", err)
+		return nil, fmt.Errorf("open db: %w", err)
 	}
 
-	// Sensible pool defaults for now
-	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(30 * time.Minute)
-
-	if err := db.Ping(); err != nil {
-		log.Fatalf("db ping failed: %v", err)
+	sqlDB, err := gdb.DB()
+	if err != nil {
+		return nil, err
 	}
+	sqlDB.SetMaxOpenConns(10)
+	sqlDB.SetMaxIdleConns(5)
+	sqlDB.SetConnMaxLifetime(30 * time.Minute)
 
-	log.Println("Connected to Postgres")
-	return db
+	if err := sqlDB.Ping(); err != nil {
+		return nil, fmt.Errorf("ping db: %w", err)
+	}
+	return gdb, nil
 }
 
-func getenv(key, def string) string {
-	val := os.Getenv(key)
-	if val == "" {
-		return def
-	}
-	return val
+// Migrate creates or updates all tables. GORM's AutoMigrate only adds tables, columns
+// and indexes; it never drops anything.
+func Migrate(gdb *gorm.DB) error {
+	return gdb.AutoMigrate(
+		&models.Role{},
+		&models.User{},
+		&models.UserHierarchy{},
+		&models.Task{},
+	)
 }

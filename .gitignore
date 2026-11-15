@@ -1,0 +1,8 @@
+# Build output
+/api
+/bin/
+/cmd/api/api
+*.exe
+
+# Local env
+.env

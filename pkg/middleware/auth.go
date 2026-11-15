@@ -6,48 +6,41 @@ import (
 	"strings"
 
 	"edgeaware/internal/auth"
+	"edgeaware/internal/httpx"
 )
 
-type ctxKey string
+type ctxKey struct{}
 
-const claimsKey ctxKey = "jwt_claims"
-
-func AuthMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			http.Error(w, "missing Authorization header", http.StatusUnauthorized)
-			return
-		}
-
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			http.Error(w, "invalid Authorization format", http.StatusUnauthorized)
-			return
-		}
-
-		tokenStr := parts[1]
-
-		claims, err := auth.VerifyToken(tokenStr)
-		if err != nil {
-			http.Error(w, "invalid or expired token", http.StatusUnauthorized)
-			return
-		}
-
-		ctx := context.WithValue(r.Context(), claimsKey, claims)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
+// Auth rejects requests without a valid Bearer token and stores the token's
+// claims in the request context.
+func Auth(tokens *auth.Tokens) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			scheme, tokenStr, ok := strings.Cut(r.Header.Get("Authorization"), " ")
+			if !ok || scheme != "Bearer" || tokenStr == "" {
+				httpx.Error(w, http.StatusUnauthorized, "missing or invalid Authorization header")
+				return
+			}
+			claims, err := tokens.Verify(tokenStr)
+			if err != nil {
+				httpx.Error(w, http.StatusUnauthorized, "invalid or expired token")
+				return
+			}
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, claims)))
+		})
+	}
 }
 
-// Optional helper if you want to read claims in handlers later.
-func GetClaims(r *http.Request) map[string]any {
-	v := r.Context().Value(claimsKey)
-	if v == nil {
-		return nil
+// Claims returns the verified token claims stored by Auth, or nil.
+func Claims(ctx context.Context) *auth.Claims {
+	c, _ := ctx.Value(ctxKey{}).(*auth.Claims)
+	return c
+}
+
+// UserID returns the logged-in user's ID, or "" if the request is unauthenticated.
+func UserID(ctx context.Context) string {
+	if c := Claims(ctx); c != nil {
+		return c.UserID
 	}
-	if c, ok := v.(map[string]any); ok {
-		return c
-	}
-	return nil
+	return ""
 }

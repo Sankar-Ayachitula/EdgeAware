@@ -1,8 +1,13 @@
 package auth
 
 import (
-	"encoding/json"
+	"errors"
 	"net/http"
+
+	"gorm.io/gorm"
+
+	"edgeaware/internal/httpx"
+	"edgeaware/internal/models"
 )
 
 type LoginRequest struct {
@@ -15,38 +20,37 @@ type LoginResponse struct {
 }
 
 type Handler struct {
-	users *UserRepo
+	db     *gorm.DB
+	tokens *Tokens
 }
 
-func NewHandler(users *UserRepo) *Handler {
-	return &Handler{users: users}
+func NewHandler(db *gorm.DB, tokens *Tokens) *Handler {
+	return &Handler{db: db, tokens: tokens}
 }
 
-func (h *Handler) LoginHandler(w http.ResponseWriter, r *http.Request) {
+// Login checks a username and password and returns a signed access token.
+func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request", http.StatusBadRequest)
+	if err := httpx.Decode(r, &req); err != nil {
+		httpx.Error(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
-	user, ok, err := h.users.FindByUsername(req.Username)
+	var user models.User
+	err := h.db.WithContext(r.Context()).Where("username = ?", req.Username).First(&user).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) || (err == nil && !CheckPassword(user.PasswordHash, req.Password)) {
+		httpx.Error(w, http.StatusUnauthorized, "invalid credentials")
+		return
+	}
 	if err != nil {
-		http.Error(w, "server error", http.StatusInternalServerError)
-		return
-	}
-	if !ok || user.Password != req.Password {
-		http.Error(w, "invalid credentials", http.StatusUnauthorized)
+		httpx.Error(w, http.StatusInternalServerError, "server error")
 		return
 	}
 
-	token, err := GenerateToken(user)
+	token, err := h.tokens.Generate(user.ID, user.Username)
 	if err != nil {
-		http.Error(w, "failed to generate token", http.StatusInternalServerError)
+		httpx.Error(w, http.StatusInternalServerError, "failed to generate token")
 		return
 	}
-
-	resp := LoginResponse{AccessToken: token}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
+	httpx.JSON(w, http.StatusOK, LoginResponse{AccessToken: token})
 }

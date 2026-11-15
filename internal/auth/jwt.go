@@ -1,47 +1,58 @@
 package auth
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var jwtSecret = []byte("super-secret-key") // move to env later
-
-func GenerateToken(user User) (string, error) {
-
-	claims := jwt.MapClaims{
-		"user_id":  user.ID,
-		"username": user.Username,
-		"role":     user.Role,
-		"exp":      time.Now().Add(15 * time.Minute).Unix(),
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-
-	return token.SignedString(jwtSecret)
+// Claims is what we put in the access token. Only the user ID is used for
+// authorization; role and hierarchy are always re-read from the database so
+// changes take effect immediately.
+type Claims struct {
+	UserID   string `json:"user_id"`
+	Username string `json:"username"`
+	jwt.RegisteredClaims
 }
 
-func VerifyToken(tokenStr string) (jwt.MapClaims, error) {
+type Tokens struct {
+	secret []byte
+	ttl    time.Duration
+}
 
-	token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
+func NewTokens(secret []byte, ttl time.Duration) *Tokens {
+	return &Tokens{secret: secret, ttl: ttl}
+}
 
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+func (t *Tokens) Generate(userID, username string) (string, error) {
+	now := time.Now()
+	claims := Claims{
+		UserID:   userID,
+		Username: username,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   userID,
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(t.ttl)),
+		},
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(t.secret)
+}
+
+func (t *Tokens) Verify(tokenStr string) (*Claims, error) {
+	claims := &Claims{}
+	token, err := jwt.ParseWithClaims(tokenStr, claims, func(tok *jwt.Token) (any, error) {
+		if _, ok := tok.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", tok.Header["alg"])
 		}
-
-		return jwtSecret, nil
+		return t.secret, nil
 	})
-
-	if err != nil || token == nil || !token.Valid {
-		return nil, fmt.Errorf("invalid token")
+	if err != nil || !token.Valid {
+		return nil, errors.New("invalid token")
 	}
-
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return nil, fmt.Errorf("invalid claims")
+	if claims.UserID == "" {
+		return nil, errors.New("token missing user_id")
 	}
-
 	return claims, nil
 }

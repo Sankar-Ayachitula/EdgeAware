@@ -1,35 +1,31 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"net/http"
+	"time"
 
-	"edgeaware/internal/auth"
+	"edgeaware/internal/config"
 	"edgeaware/internal/db"
-	"edgeaware/pkg/middleware"
+	"edgeaware/internal/server"
 )
 
 func main() {
-	sqlDB := db.Open()
+	cfg := config.Load()
 
-	userRepo := auth.NewUserRepo(sqlDB)
-	authHandler := auth.NewHandler(userRepo)
+	gdb, err := db.Open(cfg.DatabaseURL)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := db.Migrate(gdb); err != nil {
+		log.Fatalf("migrate: %v", err)
+	}
 
-	http.HandleFunc("/login", authHandler.LoginHandler)
-
-	protected := middleware.AuthMiddleware(http.HandlerFunc(protectedHandler))
-	http.Handle("/protected", protected)
-
-	// Optional health
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
-
-	fmt.Println("Server running on :8080")
-	_ = http.ListenAndServe(":8080", nil)
-}
-
-func protectedHandler(w http.ResponseWriter, r *http.Request) {
-	_, _ = w.Write([]byte("You have accessed a protected endpoint"))
+	srv := &http.Server{
+		Addr:              ":" + cfg.Port,
+		Handler:           server.New(gdb, cfg),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	log.Printf("server running on :%s", cfg.Port)
+	log.Fatal(srv.ListenAndServe())
 }
