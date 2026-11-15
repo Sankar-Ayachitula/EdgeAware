@@ -96,3 +96,44 @@ func (t *Task) BeforeCreate(*gorm.DB) error {
 func ValidID(s string) bool {
 	return uuid.Validate(s) == nil
 }
+
+// Sync feed kinds. A device applies them in seq order: upsert = store the task,
+// deleted / revoked = remove it locally (deleted: task is gone; revoked: you lost access).
+const (
+	FeedUpsert  = "upsert"
+	FeedDeleted = "deleted"
+	FeedRevoked = "revoked"
+)
+
+// SyncFeed is a per-user change log. Every task change adds one row for each user
+// who can see the task (or just lost access to it). Seq comes from one global
+// sequence, so a device only needs to remember the last seq it pulled.
+type SyncFeed struct {
+	UserID    string    `gorm:"type:uuid;primaryKey"`
+	Seq       int64     `gorm:"primaryKey"`
+	TaskID    string    `gorm:"type:uuid;not null"`
+	Kind      string    `gorm:"type:text;not null"`
+	CreatedAt time.Time `gorm:"not null;default:now()"`
+}
+
+func (SyncFeed) TableName() string { return "sync_feed" }
+
+// Device is a phone/tablet that syncs. ID is generated on the device.
+type Device struct {
+	ID          string    `gorm:"type:uuid;primaryKey" json:"id"`
+	UserID      string    `gorm:"type:uuid;not null;index" json:"user_id"`
+	Name        string    `json:"name"`
+	LastSeenAt  time.Time `json:"last_seen_at"`
+	LastPullSeq int64     `json:"last_pull_seq"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// ProcessedOp records each pushed change by (device, op_id) so a retried push
+// returns the original result instead of applying the change twice.
+type ProcessedOp struct {
+	DeviceID  string    `gorm:"type:uuid;primaryKey"`
+	OpID      string    `gorm:"primaryKey"`
+	UserID    string    `gorm:"type:uuid;not null"`
+	Result    []byte    `gorm:"type:jsonb;not null"`
+	CreatedAt time.Time `gorm:"not null;default:now()"`
+}

@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	"edgeaware/internal/apperr"
+	"edgeaware/internal/feed"
 	"edgeaware/internal/models"
 )
 
@@ -104,6 +105,11 @@ func (s *Service) MoveUser(ctx context.Context, userID, newManagerID string) err
 			return apperr.Invalid("manager's role level must be higher than the user's")
 		}
 
+		oldSeniors, err := seniors(tx, userID)
+		if err != nil {
+			return err
+		}
+
 		// 1. Cut the links between the moved subtree and its old ancestors.
 		if err := tx.Exec(`
 			DELETE FROM user_hierarchy
@@ -123,8 +129,24 @@ func (s *Service) MoveUser(ctx context.Context, userID, newManagerID string) err
 		).Error; err != nil {
 			return err
 		}
-		return tx.Model(&models.User{}).Where("id = ?", userID).Update("manager_id", newManagerID).Error
+		if err := tx.Model(&models.User{}).Where("id = ?", userID).Update("manager_id", newManagerID).Error; err != nil {
+			return err
+		}
+		newSeniors, err := seniors(tx, userID)
+		if err != nil {
+			return err
+		}
+		return feed.SubtreeMoved(tx, userID, oldSeniors, newSeniors)
 	})
+}
+
+// seniors returns everyone strictly above userID.
+func seniors(tx *gorm.DB, userID string) ([]string, error) {
+	var ids []string
+	err := tx.Model(&models.UserHierarchy{}).
+		Where("descendant_id = ? AND depth >= 1", userID).
+		Pluck("ancestor_id", &ids).Error
+	return ids, err
 }
 
 func notFound(err error) error {

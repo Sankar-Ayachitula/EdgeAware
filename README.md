@@ -1,7 +1,7 @@
 # EdgeAware Backend
 
 Go backend for managers and field operators: a multi-level hierarchy of users,
-tasks assigned down that hierarchy, and (next) offline sync for field devices.
+tasks assigned down that hierarchy, and offline sync for field devices.
 
 Stack: Go standard-library router, GORM on PostgreSQL, JWT auth, bcrypt passwords.
 
@@ -27,6 +27,9 @@ Environment: `DATABASE_URL` (or `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, 
 | `users` | Each user has a `role_id` and a `manager_id` (their direct boss). |
 | `user_hierarchy` | Closure table: one row for every (senior, junior) pair at every depth. |
 | `tasks` | `assigned_to`, `created_by`, status, due date, `completed_at`, `version`. |
+| `sync_feed` | Per-user change log for offline devices (see below). |
+| `devices` | Each syncing device, its owner, last seen time and last pulled cursor. |
+| `processed_ops` | Results of pushed changes, so retries are not applied twice. |
 
 Access rules (enforced in [internal/policy](internal/policy/policy.go)):
 
@@ -57,7 +60,65 @@ All routes except `/health` and `/login` need `Authorization: Bearer <token>`.
 | `POST /tasks` | `{title, description?, due_at?, assigned_to?, id?}` (`id` lets offline clients pick the UUID) |
 | `GET /tasks/{id}` | One task |
 | `PATCH /tasks/{id}` | Partial update; must include the current `version`, else `409` with the server copy |
-| `DELETE /tasks/{id}` | Soft delete |
+| `DELETE /tasks/{id}?version=` | Soft delete (optional version check) |
+| `GET /sync/pull?since=&limit=&device_id=` | Changes after cursor `since` (see below) |
+| `POST /sync/push` | Upload a batch of offline changes (see below) |
+| `GET /users/{id}/devices` | That user's devices and when they last synced |
+
+## Offline sync
+
+Devices keep a local copy of the tasks they can see, work offline, and sync when
+they reconnect: **push** their own changes first, then **pull** everything new.
+
+### Pull
+
+Every task change writes one `sync_feed` row for each user who can see the task:
+the assignee and all of their seniors. Rows get a number (`seq`) from one global
+counter. A device remembers the last `seq` it saw and asks for what came after:
+
+```
+GET /sync/pull?since=1042&limit=500&device_id=<uuid>
+→ { "changes": [ { "seq": 1043, "kind": "upsert", "task_id": "…", "task": { … } },
+                 { "seq": 1047, "kind": "revoked", "task_id": "…" } ],
+    "next_cursor": 1047, "has_more": false }
+```
+
+| kind | Device should |
+|---|---|
+| `upsert` | Store the included task (current server copy) |
+| `deleted` | Remove the task: it was deleted |
+| `revoked` | Remove the task: you can no longer see it (reassigned away, or your team moved) |
+
+Repeat with `since = next_cursor` while `has_more` is true. Feed writes take a
+Postgres advisory lock so feed numbers always become visible in order, which means a
+device never skips over an entry that commits late.
+
+### Push
+
+```
+POST /sync/push
+{ "device_id": "<uuid>", "device_name": "Field tablet 3",
+  "changes": [
+    { "op_id": "unique-per-device", "op": "upsert", "task_id": "<uuid>",
+      "base_version": 0, "fields": { "title": "New task", "assigned_to": "<uuid>" } },
+    { "op_id": "…", "op": "upsert", "task_id": "<uuid>", "base_version": 3,
+      "fields": { "status": "done" } },
+    { "op_id": "…", "op": "delete", "task_id": "<uuid>", "base_version": 4 } ] }
+```
+
+- `base_version: 0` with `upsert` creates the task with the device-generated `task_id`.
+  Otherwise `base_version` is the version the device last saw, and `fields` holds only
+  what changed.
+- Each change gets its own result: `applied`, `conflict` (with the server's copy in
+  `task`), `forbidden`, `not_found` or `invalid`. One bad change does not block the rest.
+- Results are stored per `(device_id, op_id)`. Resending the same batch after a dropped
+  connection returns the original results with `"duplicate": true` and changes nothing.
+- The same permission rules as the REST API apply. A device ID belongs to the first user
+  who uses it.
+
+**Not yet done:** old `sync_feed` and `processed_ops` rows are never cleaned up. Add a
+periodic job that removes rows older than every device's cursor, or older than a fixed
+retention window.
 
 ## Tests
 

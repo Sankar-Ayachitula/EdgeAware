@@ -3,6 +3,7 @@ package task
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"edgeaware/internal/httpx"
 	"edgeaware/pkg/middleware"
@@ -72,7 +73,22 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
-	if err := h.svc.Delete(r.Context(), middleware.UserID(r.Context()), r.PathValue("id")); err != nil {
+	var version *int
+	if v := r.URL.Query().Get("version"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			httpx.Error(w, http.StatusBadRequest, "version must be a number")
+			return
+		}
+		version = &n
+	}
+	err := h.svc.Delete(r.Context(), middleware.UserID(r.Context()), r.PathValue("id"), version)
+	var conflict *ConflictError
+	if errors.As(err, &conflict) {
+		httpx.JSON(w, http.StatusConflict, map[string]any{"error": "version conflict", "current": conflict.Current})
+		return
+	}
+	if err != nil {
 		httpx.FromError(w, err)
 		return
 	}

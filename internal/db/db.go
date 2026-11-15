@@ -38,10 +38,17 @@ func Open(dsn string) (*gorm.DB, error) {
 // Migrate creates or updates all tables. GORM's AutoMigrate only adds tables, columns
 // and indexes; it never drops anything.
 func Migrate(gdb *gorm.DB) error {
-	return gdb.AutoMigrate(
+	if err := gdb.AutoMigrate(
 		&models.Role{},
 		&models.User{},
 		&models.UserHierarchy{},
 		&models.Task{},
-	)
+		&models.SyncFeed{},
+		&models.Device{},
+		&models.ProcessedOp{},
+	); err != nil {
+		return err
+	}
+	// One global, ever-increasing counter for the sync feed.
+	return gdb.Exec(`CREATE SEQUENCE IF NOT EXISTS sync_seq`).Error
 }

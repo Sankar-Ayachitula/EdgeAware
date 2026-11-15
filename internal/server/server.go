@@ -10,6 +10,7 @@ import (
 	"edgeaware/internal/config"
 	"edgeaware/internal/hierarchy"
 	"edgeaware/internal/policy"
+	"edgeaware/internal/sync"
 	"edgeaware/internal/task"
 	"edgeaware/internal/user"
 	"edgeaware/pkg/middleware"
@@ -27,6 +28,8 @@ func New(db *gorm.DB, cfg config.Config) http.Handler {
 	})
 	mux.HandleFunc("POST /login", auth.NewHandler(db, tokens).Login)
 	user.NewHandler(user.NewService(db, hie, pol)).Register(mux, protect)
-	task.NewHandler(task.NewService(db, pol)).Register(mux, protect)
+	tasks := task.NewService(db, pol)
+	task.NewHandler(tasks).Register(mux, protect)
+	sync.NewHandler(sync.NewService(db, pol, tasks)).Register(mux, protect)
 	return mux
 }

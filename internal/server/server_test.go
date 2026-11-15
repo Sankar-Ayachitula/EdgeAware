@@ -41,7 +41,7 @@ func setup(t *testing.T) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := gdb.Exec(`DROP TABLE IF EXISTS tasks, user_hierarchy, users, roles CASCADE`).Error; err != nil {
+	if err := gdb.Exec(`DROP SCHEMA public CASCADE; CREATE SCHEMA public`).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Migrate(gdb); err != nil {

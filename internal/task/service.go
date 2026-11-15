@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm"
 
 	"edgeaware/internal/apperr"
+	"edgeaware/internal/feed"
 	"edgeaware/internal/models"
 	"edgeaware/internal/policy"
 )
@@ -25,6 +26,12 @@ type Service struct {
 
 func NewService(db *gorm.DB, pol *policy.Policy) *Service {
 	return &Service{db: db, pol: pol}
+}
+
+// WithTx returns a copy of the service that runs inside tx (used by sync push so
+// the task change and the op record commit together).
+func (s *Service) WithTx(tx *gorm.DB) *Service {
+	return &Service{db: tx, pol: s.pol}
 }
 
 // ConflictError is returned when the client's version is stale; Current is the
@@ -101,10 +108,23 @@ func (s *Service) Create(ctx context.Context, meID string, in CreateInput) (*mod
 		CreatedBy:   meID,
 		Version:     1,
 	}
-	if err := s.db.WithContext(ctx).Create(&t).Error; err != nil {
-		if errors.Is(err, gorm.ErrDuplicatedKey) || strings.Contains(err.Error(), "duplicate key") {
-			return nil, apperr.Conflict("a task with this id already exists")
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if t.ID != "" {
+			// Include soft-deleted rows: an ID can never be reused.
+			var n int64
+			if err := tx.Unscoped().Model(&models.Task{}).Where("id = ?", t.ID).Count(&n).Error; err != nil {
+				return err
+			}
+			if n > 0 {
+				return apperr.Conflict("a task with this id already exists")
+			}
 		}
+		if err := tx.Create(&t).Error; err != nil {
+			return err
+		}
+		return feed.TaskChanged(tx, t.ID, "", t.AssignedTo)
+	})
+	if err != nil {
 		return nil, err
 	}
 	return &t, nil
@@ -195,13 +215,18 @@ func (s *Service) Update(ctx context.Context, meID, taskID string, in UpdateInpu
 			return &ConflictError{Current: cur}
 		}
 		out, err = s.load(tx, taskID)
-		return err
+		if err != nil {
+			return err
+		}
+		return feed.TaskChanged(tx, out.ID, t.AssignedTo, out.AssignedTo)
 	})
 	return out, err
 }
 
 // Delete soft-deletes a task (kept as a tombstone so devices can sync the removal).
-func (s *Service) Delete(ctx context.Context, meID, taskID string) error {
+// If version is non-nil it must match the current version, so an offline device
+// cannot delete a task that someone else changed since it last synced.
+func (s *Service) Delete(ctx context.Context, meID, taskID string, version *int) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		t, err := s.load(tx, taskID)
 		if err != nil {
@@ -214,10 +239,16 @@ func (s *Service) Delete(ctx context.Context, meID, taskID string) error {
 		if !full {
 			return s.hiddenOrForbidden(ctx, meID, t)
 		}
+		if version != nil && *version != t.Version {
+			return &ConflictError{Current: t}
+		}
 		if err := tx.Model(&models.Task{}).Where("id = ?", t.ID).Update("version", t.Version+1).Error; err != nil {
 			return err
 		}
-		return tx.Delete(&models.Task{}, "id = ?", t.ID).Error
+		if err := tx.Delete(&models.Task{}, "id = ?", t.ID).Error; err != nil {
+			return err
+		}
+		return feed.TaskDeleted(tx, t.ID, t.AssignedTo)
 	})
 }
 
