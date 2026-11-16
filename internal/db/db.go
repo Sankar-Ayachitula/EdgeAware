@@ -46,6 +46,7 @@ func Migrate(gdb *gorm.DB) error {
 		&models.SyncFeed{},
 		&models.Device{},
 		&models.ProcessedOp{},
+		&models.SyncWatermark{},
 	); err != nil {
 		return err
 	}

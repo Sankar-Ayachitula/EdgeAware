@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -14,6 +15,7 @@ func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 
 func (h *Handler) Register(mux *http.ServeMux, protect func(http.Handler) http.Handler) {
 	mux.Handle("GET /sync/pull", protect(http.HandlerFunc(h.pull)))
+	mux.Handle("GET /sync/snapshot", protect(http.HandlerFunc(h.snapshot)))
 	mux.Handle("POST /sync/push", protect(http.HandlerFunc(h.push)))
 	mux.Handle("GET /users/{id}/devices", protect(http.HandlerFunc(h.devices)))
 }
@@ -32,6 +34,21 @@ func (h *Handler) pull(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := h.svc.Pull(r.Context(), middleware.UserID(r.Context()), q.Get("device_id"), since, int(limit))
+	if errors.Is(err, ErrCursorExpired) {
+		// 410 Gone: the entries this device needs were cleaned up. Download a snapshot.
+		httpx.JSON(w, http.StatusGone, map[string]string{"error": "cursor_expired", "resync": "/sync/snapshot"})
+		return
+	}
+	if err != nil {
+		httpx.FromError(w, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, res)
+}
+
+// GET /sync/snapshot?device_id=<uuid>
+func (h *Handler) snapshot(w http.ResponseWriter, r *http.Request) {
+	res, err := h.svc.Snapshot(r.Context(), middleware.UserID(r.Context()), r.URL.Query().Get("device_id"))
 	if err != nil {
 		httpx.FromError(w, err)
 		return

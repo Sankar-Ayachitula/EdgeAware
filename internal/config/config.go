@@ -13,6 +13,12 @@ type Config struct {
 	DatabaseURL string
 	JWTSecret   []byte
 	TokenTTL    time.Duration
+
+	// Cleanup of old sync bookkeeping (see package cleanup). CleanupInterval 0 disables
+	// the in-process timer, e.g. when running `go run ./cmd/cleanup` from cron instead.
+	CleanupInterval time.Duration
+	FeedRetention   time.Duration
+	OpsRetention    time.Duration
 }
 
 // Load reads configuration from the environment. DATABASE_URL wins if set;
@@ -25,21 +31,28 @@ func Load() Config {
 		secret = "dev-only-insecure-secret"
 	}
 
-	ttl := 15 * time.Minute
-	if v := os.Getenv("TOKEN_TTL"); v != "" {
-		d, err := time.ParseDuration(v)
-		if err != nil {
-			log.Fatalf("invalid TOKEN_TTL %q: %v", v, err)
-		}
-		ttl = d
-	}
-
 	return Config{
-		Port:        getenv("PORT", "8080"),
-		DatabaseURL: DatabaseURL(),
-		JWTSecret:   []byte(secret),
-		TokenTTL:    ttl,
+		Port:            getenv("PORT", "8080"),
+		DatabaseURL:     DatabaseURL(),
+		JWTSecret:       []byte(secret),
+		TokenTTL:        Duration("TOKEN_TTL", 15*time.Minute),
+		CleanupInterval: Duration("CLEANUP_INTERVAL", 24*time.Hour),
+		FeedRetention:   Duration("FEED_RETENTION", 30*24*time.Hour),
+		OpsRetention:    Duration("OPS_RETENTION", 7*24*time.Hour),
 	}
+}
+
+// Duration reads a Go duration such as "15m" or "720h" from the environment.
+func Duration(key string, def time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d < 0 {
+		log.Fatalf("invalid %s %q: must be a duration like 15m or 720h", key, v)
+	}
+	return d
 }
 
 // DatabaseURL returns the Postgres connection string from the environment.

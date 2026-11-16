@@ -137,3 +137,11 @@ type ProcessedOp struct {
 	Result    []byte    `gorm:"type:jsonb;not null"`
 	CreatedAt time.Time `gorm:"not null;default:now()"`
 }
+
+// SyncWatermark is the highest feed seq the cleanup job has deleted for a user.
+// A device asking for changes after an older cursor has missed deleted entries and
+// must download a fresh snapshot instead.
+type SyncWatermark struct {
+	UserID        string `gorm:"type:uuid;primaryKey"`
+	PrunedThrough int64  `gorm:"not null"`
+}

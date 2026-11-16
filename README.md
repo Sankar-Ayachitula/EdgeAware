@@ -17,7 +17,9 @@ The seeded users and their shared development password are in
 [internal/seed/seed.go](internal/seed/seed.go).
 
 Environment: `DATABASE_URL` (or `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`),
-`JWT_SECRET`, `TOKEN_TTL` (default `15m`), `PORT` (default `8080`).
+`JWT_SECRET`, `TOKEN_TTL` (default `15m`), `PORT` (default `8080`),
+`CLEANUP_INTERVAL` (default `24h`, `0` disables), `FEED_RETENTION` (default `720h`),
+`OPS_RETENTION` (default `168h`).
 
 ## How the hierarchy works
 
@@ -30,6 +32,7 @@ Environment: `DATABASE_URL` (or `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, 
 | `sync_feed` | Per-user change log for offline devices (see below). |
 | `devices` | Each syncing device, its owner, last seen time and last pulled cursor. |
 | `processed_ops` | Results of pushed changes, so retries are not applied twice. |
+| `sync_watermarks` | Per user, the highest feed entry the cleanup job has deleted. |
 
 Access rules (enforced in [internal/policy](internal/policy/policy.go)):
 
@@ -61,7 +64,8 @@ All routes except `/health` and `/login` need `Authorization: Bearer <token>`.
 | `GET /tasks/{id}` | One task |
 | `PATCH /tasks/{id}` | Partial update; must include the current `version`, else `409` with the server copy |
 | `DELETE /tasks/{id}?version=` | Soft delete (optional version check) |
-| `GET /sync/pull?since=&limit=&device_id=` | Changes after cursor `since` (see below) |
+| `GET /sync/pull?since=&limit=&device_id=` | Changes after cursor `since`; `410` if the cursor expired (see below) |
+| `GET /sync/snapshot?device_id=` | Every task you can see now, plus a cursor to pull from |
 | `POST /sync/push` | Upload a batch of offline changes (see below) |
 | `GET /users/{id}/devices` | That user's devices and when they last synced |
 
@@ -116,9 +120,32 @@ POST /sync/push
 - The same permission rules as the REST API apply. A device ID belongs to the first user
   who uses it.
 
-**Not yet done:** old `sync_feed` and `processed_ops` rows are never cleaned up. Add a
-periodic job that removes rows older than every device's cursor, or older than a fixed
-retention window.
+### First install and long-offline devices
+
+A new device, or one whose cursor has expired, calls `GET /sync/snapshot`. It returns
+every task the user can currently see plus a `cursor`. The device pushes any unsent
+changes first, replaces its whole local copy with the snapshot, then pulls from
+`cursor` as usual.
+
+### Cleanup
+
+Feed entries and saved push results are only bookkeeping, so a cleanup job deletes old
+ones. It never touches tasks, users or devices.
+
+- A feed entry is deleted once **every device of that user** has pulled past it, or once
+  it is older than `FEED_RETENTION` (30 days), so one lost tablet cannot block cleanup.
+- Saved push results are deleted after `OPS_RETENTION` (7 days).
+- The highest deleted entry per user is saved in `sync_watermarks`. A pull with an older
+  cursor gets **`410 Gone`** `{"error": "cursor_expired"}`, and the device downloads a
+  snapshot instead.
+
+The API runs cleanup at startup and then every `CLEANUP_INTERVAL`. Only one instance runs
+it at a time (Postgres advisory lock). To run it from cron instead, set
+`CLEANUP_INTERVAL=0` and schedule:
+
+```bash
+go run ./cmd/cleanup
+```
 
 ## Tests
 

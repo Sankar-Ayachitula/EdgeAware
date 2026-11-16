@@ -9,6 +9,7 @@ package sync
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"time"
@@ -84,6 +85,24 @@ func (s *Service) Devices(ctx context.Context, meID, userID string) ([]models.De
 
 // ---------- pull ----------
 
+// ErrCursorExpired means entries after the device's cursor were already deleted by
+// the cleanup job. The device must call Snapshot and replace its local copy.
+var ErrCursorExpired = errors.New("cursor expired")
+
+// readSnapshot runs fn in a read-only REPEATABLE READ transaction, so the watermark
+// and the rows it reads come from one consistent point in time even if cleanup or
+// task writes commit meanwhile.
+func (s *Service) readSnapshot(ctx context.Context, fn func(tx *gorm.DB) error) error {
+	return s.db.WithContext(ctx).Transaction(fn, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+}
+
+func watermark(tx *gorm.DB, userID string) (int64, error) {
+	var w int64
+	err := tx.Model(&models.SyncWatermark{}).Where("user_id = ?", userID).
+		Select("COALESCE(MAX(pruned_through), 0)").Scan(&w).Error
+	return w, err
+}
+
 type Change struct {
 	Seq    int64        `json:"seq"`
 	Kind   string       `json:"kind"` // upsert | deleted | revoked
@@ -117,13 +136,54 @@ func (s *Service) Pull(ctx context.Context, meID, deviceID string, since int64, 
 	}
 
 	var rows []models.SyncFeed
-	if err := s.db.WithContext(ctx).
-		Where("user_id = ? AND seq > ?", meID, since).
-		Order("seq").
-		Limit(limit + 1).
-		Find(&rows).Error; err != nil {
+	visible := map[string]*models.Task{}
+	latest := map[string]int{}
+	err := s.readSnapshot(ctx, func(tx *gorm.DB) error {
+		w, err := watermark(tx, meID)
+		if err != nil {
+			return err
+		}
+		if since < w {
+			return ErrCursorExpired
+		}
+		if err := tx.Where("user_id = ? AND seq > ?", meID, since).
+			Order("seq").Limit(limit + 1).Find(&rows).Error; err != nil {
+			return err
+		}
+		page := rows // rows may hold one extra entry, used only as the has_more marker
+		if len(page) > limit {
+			page = page[:limit]
+		}
+
+		// Keep only the latest entry per task, preserving seq order.
+		for i, r := range page {
+			latest[r.TaskID] = i
+		}
+		var ids []string
+		for i, r := range page {
+			if latest[r.TaskID] == i && r.Kind == models.FeedUpsert {
+				ids = append(ids, r.TaskID)
+			}
+		}
+		if len(ids) == 0 {
+			return nil
+		}
+		// Load the upserted tasks that the user can still see (assignee is me or below me).
+		var tasks []models.Task
+		if err := tx.Where("tasks.id IN ?", ids).
+			Where("EXISTS (SELECT 1 FROM user_hierarchy h WHERE h.ancestor_id = ? AND h.descendant_id = tasks.assigned_to)", meID).
+			Find(&tasks).Error; err != nil {
+			return err
+		}
+		for i := range tasks {
+			visible[tasks[i].ID] = &tasks[i]
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
+
 	res := &PullResult{Changes: []Change{}, NextCursor: since}
 	if len(rows) > limit {
 		res.HasMore = true
@@ -133,33 +193,6 @@ func (s *Service) Pull(ctx context.Context, meID, deviceID string, since int64, 
 		return res, s.saveCursor(ctx, deviceID, since)
 	}
 	res.NextCursor = rows[len(rows)-1].Seq
-
-	// Keep only the latest entry per task, preserving seq order.
-	latest := map[string]int{}
-	for i, r := range rows {
-		latest[r.TaskID] = i
-	}
-	var ids []string
-	for i, r := range rows {
-		if latest[r.TaskID] == i && r.Kind == models.FeedUpsert {
-			ids = append(ids, r.TaskID)
-		}
-	}
-
-	// Load the upserted tasks that the user can still see (assignee is me or below me).
-	visible := map[string]*models.Task{}
-	if len(ids) > 0 {
-		var tasks []models.Task
-		if err := s.db.WithContext(ctx).
-			Where("tasks.id IN ?", ids).
-			Where("EXISTS (SELECT 1 FROM user_hierarchy h WHERE h.ancestor_id = ? AND h.descendant_id = tasks.assigned_to)", meID).
-			Find(&tasks).Error; err != nil {
-			return nil, err
-		}
-		for i := range tasks {
-			visible[tasks[i].ID] = &tasks[i]
-		}
-	}
 
 	for i, r := range rows {
 		if latest[r.TaskID] != i {
@@ -178,6 +211,48 @@ func (s *Service) Pull(ctx context.Context, meID, deviceID string, since int64, 
 		res.Changes = append(res.Changes, c)
 	}
 	return res, s.saveCursor(ctx, deviceID, res.NextCursor)
+}
+
+type SnapshotResult struct {
+	Tasks  []models.Task `json:"tasks"`
+	Cursor int64         `json:"cursor"`
+}
+
+// Snapshot returns every task the user can currently see, plus the cursor to pull
+// from afterwards. Devices use it on first install or after ErrCursorExpired, and
+// replace their whole local copy with it (after pushing any unsent changes).
+func (s *Service) Snapshot(ctx context.Context, meID, deviceID string) (*SnapshotResult, error) {
+	if deviceID != "" {
+		if _, err := s.touchDevice(ctx, meID, deviceID, ""); err != nil {
+			return nil, err
+		}
+	}
+	res := &SnapshotResult{Tasks: []models.Task{}}
+	err := s.readSnapshot(ctx, func(tx *gorm.DB) error {
+		if err := tx.
+			Where("EXISTS (SELECT 1 FROM user_hierarchy h WHERE h.ancestor_id = ? AND h.descendant_id = tasks.assigned_to)", meID).
+			Order("created_at, id").
+			Find(&res.Tasks).Error; err != nil {
+			return err
+		}
+		// Feed seqs commit in order (see package feed), so every entry for this user
+		// that is not yet visible in this snapshot will have a seq above this cursor.
+		w, err := watermark(tx, meID)
+		if err != nil {
+			return err
+		}
+		var maxSeq int64
+		if err := tx.Model(&models.SyncFeed{}).Where("user_id = ?", meID).
+			Select("COALESCE(MAX(seq), 0)").Scan(&maxSeq).Error; err != nil {
+			return err
+		}
+		res.Cursor = max(maxSeq, w)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return res, s.saveCursor(ctx, deviceID, res.Cursor)
 }
 
 func (s *Service) saveCursor(ctx context.Context, deviceID string, seq int64) error {

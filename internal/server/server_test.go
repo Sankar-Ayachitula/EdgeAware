@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"edgeaware/internal/config"
 	"edgeaware/internal/db"
@@ -26,6 +27,7 @@ import (
 
 type env struct {
 	t     *testing.T
+	db    *gorm.DB
 	srv   *httptest.Server
 	users map[string]models.User
 	roles map[string]uint
@@ -58,7 +60,7 @@ func setup(t *testing.T) *env {
 	cfg := config.Config{JWTSecret: []byte("test-secret"), TokenTTL: time.Hour}
 	srv := httptest.NewServer(server.New(gdb, cfg))
 	t.Cleanup(srv.Close)
-	return &env{t: t, srv: srv, users: users, roles: roles}
+	return &env{t: t, db: gdb, srv: srv, users: users, roles: roles}
 }
 
 func (e *env) id(username string) string { return e.users[username].ID }
