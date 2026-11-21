@@ -23,3 +23,7 @@ interface PlatformDeps {
  * emulator sees the host Mac as 10.0.2.2, the iOS simulator as localhost.
  */
 expect val defaultServerUrl: String
+
+/** System back button/gesture (Android); iOS has no system back, so it does nothing there. */
+@androidx.compose.runtime.Composable
+expect fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit)

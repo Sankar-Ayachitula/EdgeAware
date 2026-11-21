@@ -24,3 +24,7 @@ private class PrefsStore(context: Context) : KeyValueStore {
     override fun put(key: String, value: String) = prefs.edit().putString(key, value).apply()
     override fun remove(key: String) = prefs.edit().remove(key).apply()
 }
+
+@androidx.compose.runtime.Composable
+actual fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit) =
+    androidx.activity.compose.BackHandler(enabled, onBack)

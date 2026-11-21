@@ -24,3 +24,7 @@ private class DefaultsStore : KeyValueStore {
     override fun put(key: String, value: String) = defaults.setObject(value, forKey = key)
     override fun remove(key: String) = defaults.removeObjectForKey(key)
 }
+
+@androidx.compose.runtime.Composable
+actual fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit) {
+}
