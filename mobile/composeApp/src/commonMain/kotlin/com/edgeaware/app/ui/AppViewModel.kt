@@ -16,9 +16,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -62,6 +64,10 @@ class AppViewModel(private val c: AppContainer) : ViewModel() {
         c.repo.syncState().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val syncStatus: StateFlow<SyncStatus> = c.sync.status
     val notices: SharedFlow<String> = c.sync.notices
+
+    // Short "Synced" / "Server error" messages shown as a toast after a sync.
+    private val _toasts = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    val toasts: SharedFlow<String> = _toasts.asSharedFlow()
 
     fun task(id: String): Flow<VisibleTask?> = c.repo.task(id)
 
@@ -160,8 +166,9 @@ class AppViewModel(private val c: AppContainer) : ViewModel() {
         syncNow()
     }
 
+    /** A sync the user asked for (sync button, pull to refresh, a status change): always toasts. */
     fun syncNow() {
-        viewModelScope.launch { runSync() }
+        viewModelScope.launch { runSync(userAsked = true) }
     }
 
     /** Logs out but keeps the local data, so queued changes are sent after the next login. */
@@ -171,18 +178,31 @@ class AppViewModel(private val c: AppContainer) : ViewModel() {
         _loggedIn.value = false
     }
 
-    private suspend fun runSync() {
-        if (c.sync.sync() == SyncStatus.NeedsLogin) {
-            logout()
-            _login.update { it.copy(error = "Your session expired. Log in again to sync.") }
+    // Background syncs run every 30 s, so they only toast when they start failing,
+    // not on every success or on every repeat of the same failure.
+    private var backgroundFailing = false
+
+    private suspend fun runSync(userAsked: Boolean) {
+        val result = c.sync.sync()
+        val failed = result is SyncStatus.Failed || result == SyncStatus.Offline
+        when {
+            result == SyncStatus.NeedsLogin -> {
+                logout()
+                _login.update { it.copy(error = "Your session expired. Log in again to sync.") }
+            }
+            failed && (userAsked || !backgroundFailing) -> _toasts.tryEmit(
+                if (result == SyncStatus.Offline) "Server error: can't reach the server" else "Server error",
+            )
+            !failed && userAsked -> _toasts.tryEmit("Synced")
         }
+        if (!userAsked) backgroundFailing = failed
     }
 
     private fun startAutoSync() {
         autoSync?.cancel()
         autoSync = viewModelScope.launch {
             while (true) {
-                runSync()
+                runSync(userAsked = false)
                 delay(30_000)
             }
         }

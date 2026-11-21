@@ -21,7 +21,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Sync
@@ -58,11 +57,8 @@ import com.edgeaware.app.db.VisibleTasks
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TaskListScreen(
-    username: String,
     tasks: List<VisibleTasks>,
     syncStatus: SyncStatus,
-    pendingCount: Long,
-    lastSyncAt: Long?,
     snackbar: SnackbarHostState,
     onOpen: (String) -> Unit,
     onSync: () -> Unit,
@@ -74,12 +70,7 @@ fun TaskListScreen(
         topBar = {
             TopAppBar(
                 colors = yellowTopBarColors(),
-                title = {
-                    Column {
-                        Text("My tasks", fontWeight = FontWeight.Bold)
-                        Text(username, style = MaterialTheme.typography.bodySmall, color = Brand.OnYellow.copy(alpha = 0.75f))
-                    }
-                },
+                title = { Text("My tasks", fontWeight = FontWeight.Bold) },
                 actions = {
                     IconButton(onClick = onSync, enabled = syncStatus != SyncStatus.Syncing) {
                         if (syncStatus == SyncStatus.Syncing) CircularProgressIndicator(Modifier.size(20.dp), color = Brand.OnYellow, strokeWidth = 2.dp)
@@ -91,7 +82,6 @@ fun TaskListScreen(
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            SyncBanner(syncStatus, pendingCount, lastSyncAt)
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 item { FilterChip(selected = filter == null, onClick = { filter = null }, label = { Text("All (${tasks.size})") }) }
                 items(TaskStatus.all) { s ->
@@ -109,28 +99,6 @@ fun TaskListScreen(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun SyncBanner(status: SyncStatus, pending: Long, lastSyncAt: Long?) {
-    val (icon, text, color) = when {
-        status == SyncStatus.Offline -> Triple(
-            Icons.Filled.CloudOff,
-            if (pending > 0) "Offline · $pending change(s) will sync when you're back online" else "Offline · showing saved tasks",
-            Color(0xFF8A5A00),
-        )
-        status is SyncStatus.Failed -> Triple(Icons.Filled.CloudOff, "Sync problem: ${status.message}", MaterialTheme.colorScheme.error)
-        pending > 0 -> Triple(Icons.Filled.CloudUpload, "$pending change(s) waiting to sync", MaterialTheme.colorScheme.primary)
-        else -> Triple(Icons.Filled.Sync, formatSyncedAgo(lastSyncAt), MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-    Row(
-        Modifier.fillMaxWidth().background(color.copy(alpha = 0.10f)).padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(icon, null, tint = color, modifier = Modifier.size(16.dp))
-        Spacer(Modifier.width(8.dp))
-        Text(text, style = MaterialTheme.typography.bodySmall, color = color)
     }
 }
 

@@ -13,8 +13,11 @@ Stack: Compose Multiplatform, Ktor (HTTP), SQLDelight (local SQLite), kotlinx.se
 - **My tasks**: sorted (in progress, then to do, then done; soonest due first), filter
   chips with counts, overdue dates in red, and pull to refresh.
 - **Task detail**: change status with one tap.
-- **Offline first**: every change is saved on the phone immediately and queued. A banner
-  shows whether you are offline, how many changes are waiting, and when you last synced.
+- **Offline first**: every change is saved on the phone immediately and queued; a cloud
+  icon on the task card shows it hasn't synced yet. The Profile tab shows how many changes
+  are waiting and when you last synced.
+- **Sync toasts**: a sync you start (sync button, pull to refresh, a status change) shows
+  "Synced" or "Server error". Background syncs only show a toast when they start failing.
 - **Sync**: runs at startup, every 30 seconds, after each change, and on pull to refresh.
   It pushes queued changes, then pulls the server's change feed.
   - If a supervisor edited the same task meanwhile, the status change is retried on top of

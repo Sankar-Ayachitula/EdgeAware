@@ -30,6 +30,7 @@ import com.edgeaware.app.ui.PathEntry
 import com.edgeaware.app.ui.ProfileScreen
 import com.edgeaware.app.ui.TaskDetailScreen
 import com.edgeaware.app.ui.TaskListScreen
+import com.edgeaware.app.ui.ToastHost
 
 @Composable
 fun App(deps: PlatformDeps) {
@@ -38,75 +39,81 @@ fun App(deps: PlatformDeps) {
 
     EdgeAwareTheme {
         Surface {
-            val loggedIn by vm.loggedIn.collectAsState()
-            if (!loggedIn) {
-                val login by vm.login.collectAsState()
-                LoginScreen(login, onLogin = vm::login)
-                return@Surface
+            Box {
+                AppContent(vm)
+                // Sync results ("Synced" / "Server error"), on top of every screen.
+                ToastHost(vm.toasts)
             }
+        }
+    }
+}
 
-            val snackbar = remember { SnackbarHostState() }
-            LaunchedEffect(Unit) { vm.notices.collect { snackbar.showSnackbar(it) } }
+@Composable
+private fun AppContent(vm: AppViewModel) {
+    val loggedIn by vm.loggedIn.collectAsState()
+    if (!loggedIn) {
+        val login by vm.login.collectAsState()
+        LoginScreen(login, onLogin = vm::login)
+        return
+    }
 
-            val status by vm.syncStatus.collectAsState()
-            val pending by vm.pendingCount.collectAsState()
-            val state by vm.syncState.collectAsState()
+    val snackbar = remember { SnackbarHostState() }
+    LaunchedEffect(Unit) { vm.notices.collect { snackbar.showSnackbar(it) } }
 
-            // A task opened from My tasks covers the whole screen (no bottom bar).
-            var openTaskId by rememberSaveable { mutableStateOf<String?>(null) }
-            val openId = openTaskId
-            if (openId != null) {
-                PlatformBackHandler(enabled = true) { openTaskId = null }
-                val task by remember(openId) { vm.task(openId) }.collectAsState(null)
-                TaskDetailScreen(task, snackbar, onBack = { openTaskId = null }, onSetStatus = { vm.setStatus(openId, it) })
-                return@Surface
-            }
+    val status by vm.syncStatus.collectAsState()
+    val pending by vm.pendingCount.collectAsState()
+    val state by vm.syncState.collectAsState()
 
-            var tab by rememberSaveable { mutableStateOf(MainTab.Tasks) }
-            // Where you are in the hierarchy tab; kept while switching tabs. Starts at you.
-            val path = remember(vm.myUserId) { mutableStateListOf(PathEntry(vm.myUserId, vm.username, null)) }
-            // Back on another tab returns to My tasks first.
-            PlatformBackHandler(enabled = tab != MainTab.Tasks && !(tab == MainTab.Hierarchy && path.size > 1)) { tab = MainTab.Tasks }
+    // A task opened from My tasks covers the whole screen (no bottom bar).
+    var openTaskId by rememberSaveable { mutableStateOf<String?>(null) }
+    val openId = openTaskId
+    if (openId != null) {
+        PlatformBackHandler(enabled = true) { openTaskId = null }
+        val task by remember(openId) { vm.task(openId) }.collectAsState(null)
+        TaskDetailScreen(task, snackbar, onBack = { openTaskId = null }, onSetStatus = { vm.setStatus(openId, it) })
+        return
+    }
 
-            Scaffold(
-                bottomBar = { MainBottomBar(tab, onSelect = { tab = it }) },
-                // Each tab draws its own top bar under the status bar.
-                contentWindowInsets = WindowInsets(0),
-            ) { padding ->
-                Box(Modifier.padding(padding).consumeWindowInsets(padding)) {
-                    when (tab) {
-                        MainTab.Tasks -> {
-                            val tasks by vm.tasks.collectAsState()
-                            TaskListScreen(
-                                username = vm.username,
-                                tasks = tasks,
-                                syncStatus = status,
-                                pendingCount = pending,
-                                lastSyncAt = state?.last_sync_at,
-                                snackbar = snackbar,
-                                onOpen = { openTaskId = it },
-                                onSync = vm::syncNow,
-                            )
-                        }
-                        MainTab.Hierarchy -> HierarchyScreen(
-                            path = path,
-                            onOpen = { path += PathEntry(it.id, it.username, it.role.name) },
-                            onBack = { if (path.size > 1) path.removeAt(path.lastIndex) },
-                            load = vm::loadPerson,
-                        )
-                        MainTab.Profile -> {
-                            val profile by vm.profile.collectAsState()
-                            ProfileScreen(
-                                profile = profile,
-                                syncStatus = status,
-                                pendingCount = pending,
-                                lastSyncAt = state?.last_sync_at,
-                                onRefresh = vm::refreshProfile,
-                                onSync = vm::syncNow,
-                                onLogout = vm::logout,
-                            )
-                        }
-                    }
+    var tab by rememberSaveable { mutableStateOf(MainTab.Tasks) }
+    // Where you are in the hierarchy tab; kept while switching tabs. Starts at you.
+    val path = remember(vm.myUserId) { mutableStateListOf(PathEntry(vm.myUserId, vm.username, null)) }
+    // Back on another tab returns to My tasks first.
+    PlatformBackHandler(enabled = tab != MainTab.Tasks && !(tab == MainTab.Hierarchy && path.size > 1)) { tab = MainTab.Tasks }
+
+    Scaffold(
+        bottomBar = { MainBottomBar(tab, onSelect = { tab = it }) },
+        // Each tab draws its own top bar under the status bar.
+        contentWindowInsets = WindowInsets(0),
+    ) { padding ->
+        Box(Modifier.padding(padding).consumeWindowInsets(padding)) {
+            when (tab) {
+                MainTab.Tasks -> {
+                    val tasks by vm.tasks.collectAsState()
+                    TaskListScreen(
+                        tasks = tasks,
+                        syncStatus = status,
+                        snackbar = snackbar,
+                        onOpen = { openTaskId = it },
+                        onSync = vm::syncNow,
+                    )
+                }
+                MainTab.Hierarchy -> HierarchyScreen(
+                    path = path,
+                    onOpen = { path += PathEntry(it.id, it.username, it.role.name) },
+                    onBack = { if (path.size > 1) path.removeAt(path.lastIndex) },
+                    load = vm::loadPerson,
+                )
+                MainTab.Profile -> {
+                    val profile by vm.profile.collectAsState()
+                    ProfileScreen(
+                        profile = profile,
+                        syncStatus = status,
+                        pendingCount = pending,
+                        lastSyncAt = state?.last_sync_at,
+                        onRefresh = vm::refreshProfile,
+                        onSync = vm::syncNow,
+                        onLogout = vm::logout,
+                    )
                 }
             }
         }
