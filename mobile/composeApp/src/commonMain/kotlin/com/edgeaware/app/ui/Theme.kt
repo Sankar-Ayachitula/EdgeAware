@@ -9,7 +9,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 
 /** Yellow and white brand colors. */
 object Brand {
-    val Yellow = Color(0xFFFFF300)        // app bar, primary button
+    val Yellow = Color(0xFFFFD700)        // classic yellow: app bar, primary button
     val YellowLight = Color(0xFFFFF3C4)   // selected chips, highlights
     val OnYellow = Color(0xFF3B2F00)      // text and icons on yellow
     val Gold = Color(0xFF8A6A00)          // readable accent for text/icons on white
