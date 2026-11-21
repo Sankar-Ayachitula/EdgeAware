@@ -1,0 +1,108 @@
+-- Local copy of the tasks this user can see, exactly as the server last sent them.
+CREATE TABLE task (
+    id           TEXT NOT NULL PRIMARY KEY,
+    title        TEXT NOT NULL,
+    description  TEXT NOT NULL,
+    status       TEXT NOT NULL,
+    due_at       TEXT,
+    completed_at TEXT,
+    assigned_to  TEXT NOT NULL,
+    created_by   TEXT NOT NULL,
+    version      INTEGER NOT NULL,
+    updated_at   TEXT NOT NULL
+);
+
+-- Changes made on this device that the server has not accepted yet.
+-- Operators can only change a task's status, so one pending status per task.
+-- base_version is the server version the change was made against.
+CREATE TABLE outbox (
+    op_id        TEXT NOT NULL PRIMARY KEY,
+    task_id      TEXT NOT NULL UNIQUE,
+    base_version INTEGER NOT NULL,
+    status       TEXT NOT NULL,
+    created_at   INTEGER NOT NULL
+);
+
+-- Single row: where this device is in the server's change feed.
+CREATE TABLE sync_state (
+    id           INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
+    cursor       INTEGER NOT NULL DEFAULT 0,
+    last_sync_at INTEGER
+);
+
+-- What the UI shows: the server copy with any pending local status on top.
+visibleTasks:
+SELECT
+    t.id, t.title, t.description,
+    COALESCE(o.status, t.status) AS status,
+    t.due_at, t.completed_at, t.version,
+    o.op_id IS NOT NULL AS pending
+FROM task t LEFT JOIN outbox o ON o.task_id = t.id
+ORDER BY
+    CASE COALESCE(o.status, t.status) WHEN 'in_progress' THEN 0 WHEN 'todo' THEN 1 ELSE 2 END,
+    t.due_at IS NULL, t.due_at, t.title;
+
+visibleTask:
+SELECT
+    t.id, t.title, t.description,
+    COALESCE(o.status, t.status) AS status,
+    t.due_at, t.completed_at, t.version,
+    o.op_id IS NOT NULL AS pending
+FROM task t LEFT JOIN outbox o ON o.task_id = t.id
+WHERE t.id = ?;
+
+serverTask:
+SELECT * FROM task WHERE id = ?;
+
+upsertTask:
+INSERT OR REPLACE INTO task (id, title, description, status, due_at, completed_at, assigned_to, created_by, version, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+deleteTask:
+DELETE FROM task WHERE id = ?;
+
+deleteAllTasks:
+DELETE FROM task;
+
+pendingOps:
+SELECT * FROM outbox ORDER BY created_at;
+
+pendingOpForTask:
+SELECT * FROM outbox WHERE task_id = ?;
+
+pendingCount:
+SELECT COUNT(*) FROM outbox;
+
+insertOp:
+INSERT INTO outbox (op_id, task_id, base_version, status, created_at) VALUES (?, ?, ?, ?, ?);
+
+-- A newer edit replaces the pending one; a new op_id makes it a new change for the server.
+replaceOpStatus:
+UPDATE outbox SET op_id = ?, status = ? WHERE task_id = ?;
+
+rebaseOp:
+UPDATE outbox SET op_id = ?, base_version = ? WHERE task_id = ?;
+
+deleteOp:
+DELETE FROM outbox WHERE op_id = ?;
+
+deleteOpForTask:
+DELETE FROM outbox WHERE task_id = ?;
+
+deleteAllOps:
+DELETE FROM outbox;
+
+syncState:
+SELECT * FROM sync_state WHERE id = 1;
+
+initSyncState:
+INSERT OR IGNORE INTO sync_state (id, cursor) VALUES (1, 0);
+
+setCursor:
+UPDATE sync_state SET cursor = ? WHERE id = 1;
+
+setLastSync:
+UPDATE sync_state SET last_sync_at = ? WHERE id = 1;
+
+resetSyncState:
+UPDATE sync_state SET cursor = 0, last_sync_at = NULL WHERE id = 1;
