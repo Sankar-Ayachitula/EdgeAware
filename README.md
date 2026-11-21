@@ -5,6 +5,8 @@ tasks assigned down that hierarchy, and offline sync for field devices.
 
 Stack: Go standard-library router, GORM on PostgreSQL, JWT auth, bcrypt passwords.
 
+The operator mobile app (Kotlin Multiplatform, Android and iOS) is in [mobile/](mobile/README.md).
+
 ## Run locally
 
 ```bash
