@@ -12,5 +12,6 @@ class AppContainer(deps: PlatformDeps) {
     val session = SessionStore(deps.keyValueStore)
     val repo = TaskRepository(EdgeAwareDb(deps.createSqlDriver()))
     val api = ApiClient(deps.createHttpEngine(), session)
-    val sync = SyncEngine(api, repo, session, deps.deviceName)
+    val deviceName = deps.deviceName
+    val sync = SyncEngine(api, repo, session, deviceName)
 }

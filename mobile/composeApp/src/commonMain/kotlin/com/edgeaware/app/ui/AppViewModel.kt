@@ -6,6 +6,9 @@ import com.edgeaware.app.AppContainer
 import com.edgeaware.app.data.ApiException
 import com.edgeaware.app.data.OfflineException
 import com.edgeaware.app.data.SyncStatus
+import com.edgeaware.app.data.TaskDto
+import com.edgeaware.app.data.UnauthorizedException
+import com.edgeaware.app.data.UserDto
 import com.edgeaware.app.db.Sync_state
 import com.edgeaware.app.db.VisibleTask
 import com.edgeaware.app.db.VisibleTasks
@@ -21,6 +24,18 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+
+/** What the profile tab shows; role comes from the last login and is refreshed when online. */
+data class ProfileUiState(
+    val username: String,
+    val roleName: String?,
+    val roleLevel: Int?,
+    val serverUrl: String,
+    val deviceName: String,
+)
+
+/** One person's page in the hierarchy tab: who reports to them and their tasks. */
+data class PersonPage(val juniors: List<UserDto>, val tasks: List<TaskDto>)
 
 data class LoginUiState(
     val serverUrl: String,
@@ -50,6 +65,58 @@ class AppViewModel(private val c: AppContainer) : ViewModel() {
 
     fun task(id: String): Flow<VisibleTask?> = c.repo.task(id)
 
+    val myUserId: String get() = c.session.userId ?: ""
+
+    private fun currentProfile() = ProfileUiState(
+        username = c.session.username ?: "",
+        roleName = c.session.roleName,
+        roleLevel = c.session.roleLevel,
+        serverUrl = c.session.serverUrl,
+        deviceName = c.deviceName,
+    )
+
+    private val _profile = MutableStateFlow(currentProfile())
+    val profile: StateFlow<ProfileUiState> = _profile.asStateFlow()
+
+    /** Refreshes the role from the server; keeps the saved one when offline. */
+    fun refreshProfile() {
+        viewModelScope.launch {
+            try {
+                saveRole(c.api.me())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+            _profile.value = currentProfile()
+        }
+    }
+
+    private fun saveRole(me: UserDto) {
+        c.session.roleName = me.role.name
+        c.session.roleLevel = me.role.level
+    }
+
+    /**
+     * Loads a person's page for the hierarchy tab. This is read from the server (not the
+     * offline store), so it needs a connection. Your own page has no tasks section: those
+     * are on the My tasks tab.
+     */
+    suspend fun loadPerson(userId: String): Result<PersonPage> = try {
+        val juniors = c.api.juniors(userId)
+        val tasks = if (userId == myUserId) emptyList() else c.api.userTasks(userId)
+        Result.success(PersonPage(juniors, tasks))
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: OfflineException) {
+        Result.failure(Exception("You're offline. The hierarchy needs a connection."))
+    } catch (e: UnauthorizedException) {
+        logout()
+        _login.update { it.copy(error = "Your session expired. Log in again.") }
+        Result.failure(e)
+    } catch (e: Exception) {
+        Result.failure(Exception(e.message ?: "Couldn't load the hierarchy"))
+    }
+
     private var autoSync: Job? = null
 
     init {
@@ -71,6 +138,8 @@ class AppViewModel(private val c: AppContainer) : ViewModel() {
                 if (c.session.userId != null && c.session.userId != me.id) c.repo.clearAll()
                 c.session.userId = me.id
                 c.session.username = me.username
+                saveRole(me)
+                _profile.value = currentProfile()
                 _login.update { it.copy(loading = false) }
                 _loggedIn.value = true
                 startAutoSync()

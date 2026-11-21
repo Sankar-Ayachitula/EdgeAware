@@ -66,6 +66,14 @@ class ApiClient(
 
     suspend fun me(): UserDto = call { http.get(url("/me")) { auth() } }.ok()
 
+    /** People who report directly to [userId] (the caller must be that user or above them). */
+    suspend fun juniors(userId: String): List<UserDto> =
+        call { http.get(url("/users/$userId/juniors")) { auth() } }.ok()
+
+    /** Tasks assigned to [userId] (the caller must be that user or above them). */
+    suspend fun userTasks(userId: String): List<TaskDto> =
+        call { http.get(url("/users/$userId/tasks")) { auth() } }.ok()
+
     suspend fun pull(since: Long, deviceId: String, limit: Int = 500): PullResponse {
         val resp = call {
             http.get(url("/sync/pull")) {
