@@ -21,18 +21,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Event
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -43,19 +38,16 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -74,11 +66,8 @@ fun TaskListScreen(
     snackbar: SnackbarHostState,
     onOpen: (String) -> Unit,
     onSync: () -> Unit,
-    onLogout: () -> Unit,
 ) {
     var filter by rememberSaveable { mutableStateOf<String?>(null) }
-    var menuOpen by remember { mutableStateOf(false) }
-    var confirmLogout by remember { mutableStateOf(false) }
     val shown = if (filter == null) tasks else tasks.filter { it.status == filter }
 
     Scaffold(
@@ -95,16 +84,6 @@ fun TaskListScreen(
                     IconButton(onClick = onSync, enabled = syncStatus != SyncStatus.Syncing) {
                         if (syncStatus == SyncStatus.Syncing) CircularProgressIndicator(Modifier.size(20.dp), color = Brand.OnYellow, strokeWidth = 2.dp)
                         else Icon(Icons.Filled.Sync, contentDescription = "Sync now")
-                    }
-                    Box {
-                        IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "More") }
-                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                            DropdownMenuItem(
-                                text = { Text("Log out") },
-                                leadingIcon = { Icon(Icons.AutoMirrored.Filled.Logout, null) },
-                                onClick = { menuOpen = false; if (pendingCount > 0) confirmLogout = true else onLogout() },
-                            )
-                        }
                     }
                 },
             )
@@ -130,16 +109,6 @@ fun TaskListScreen(
                 }
             }
         }
-    }
-
-    if (confirmLogout) {
-        AlertDialog(
-            onDismissRequest = { confirmLogout = false },
-            title = { Text("Changes not sent yet") },
-            text = { Text("$pendingCount change(s) haven't reached the server. They stay on this phone and are sent the next time you log in.") },
-            confirmButton = { TextButton(onClick = { confirmLogout = false; onLogout() }) { Text("Log out anyway") } },
-            dismissButton = { TextButton(onClick = { confirmLogout = false }) { Text("Stay") } },
-        )
     }
 }
 
@@ -174,13 +143,7 @@ private fun TaskCard(t: VisibleTasks, onClick: () -> Unit) {
         shape = shape,
         colors = CardDefaults.cardColors(containerColor = Brand.CardWhite),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        // A soft, wide shadow on all sides so the white card floats on the white background.
-        modifier = Modifier.fillMaxWidth().shadow(
-            elevation = 10.dp,
-            shape = shape,
-            ambientColor = Color.Black.copy(alpha = 0.18f),
-            spotColor = Color.Black.copy(alpha = 0.28f),
-        ),
+        modifier = Modifier.fillMaxWidth().floatingCard(shape),
     ) {
         // IntrinsicSize.Min lets the strip stretch to the card's full height.
         Row(Modifier.height(IntrinsicSize.Min)) {
@@ -219,7 +182,7 @@ fun StatusPill(status: String) {
 }
 
 @Composable
-private fun EmptyState(message: String) {
+internal fun EmptyState(message: String) {
     // LazyColumn so pull-to-refresh still works on an empty list.
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(32.dp)) {
         item {

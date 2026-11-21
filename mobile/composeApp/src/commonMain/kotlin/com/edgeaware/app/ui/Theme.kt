@@ -6,6 +6,10 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.unit.dp
 
 /** Yellow and white brand colors. */
 object Brand {
@@ -50,3 +54,20 @@ fun yellowTopBarColors() = TopAppBarDefaults.topAppBarColors(
     navigationIconContentColor = Brand.OnYellow,
     actionIconContentColor = Brand.OnYellow,
 )
+
+/** A soft, wide shadow on all sides so a white card floats on the white background. */
+fun Modifier.floatingCard(shape: Shape): Modifier = shadow(
+    elevation = 10.dp,
+    shape = shape,
+    ambientColor = Color.Black.copy(alpha = 0.18f),
+    spotColor = Color.Black.copy(alpha = 0.28f),
+)
+
+/** Two-letter initials for avatars: "operator_n1a" -> "ON", "director" -> "DI". */
+fun initials(username: String): String {
+    val parts = username.split('_', '.', '-', ' ').filter { it.isNotBlank() }
+    return when {
+        parts.size >= 2 -> "${parts[0][0]}${parts[1][0]}"
+        else -> username.take(2)
+    }.uppercase()
+}
