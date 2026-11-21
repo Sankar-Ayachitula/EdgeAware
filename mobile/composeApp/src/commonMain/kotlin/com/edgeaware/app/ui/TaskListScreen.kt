@@ -1,10 +1,12 @@
 package com.edgeaware.app.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -27,6 +29,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -119,7 +122,7 @@ fun TaskListScreen(
                 if (shown.isEmpty()) {
                     EmptyState(if (tasks.isEmpty()) "No tasks assigned to you yet." else "No tasks in this list.")
                 } else {
-                    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxSize()) {
                         items(shown, key = { it.id }) { TaskCard(it, onClick = { onOpen(it.id) }) }
                     }
                 }
@@ -162,24 +165,31 @@ private fun SyncBanner(status: SyncStatus, pending: Long, lastSyncAt: Long?) {
 
 @Composable
 private fun TaskCard(t: VisibleTasks, onClick: () -> Unit) {
-    Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(t.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                if (t.pending) Icon(Icons.Filled.CloudUpload, contentDescription = "Waiting to sync", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatusPill(t.status)
-                formatDate(t.due_at)?.let { due ->
-                    val overdue = isOverdue(t.due_at, t.status)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.Event, null, Modifier.size(14.dp), tint = if (overdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            if (overdue) "Overdue · $due" else "Due $due",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (overdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+    val overdue = isOverdue(t.due_at, t.status)
+    Card(
+        onClick = onClick,
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = Brand.CardWhite),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp, pressedElevation = 8.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        // IntrinsicSize.Min lets the strip stretch to the card's full height.
+        Row(Modifier.height(IntrinsicSize.Min)) {
+            Box(Modifier.width(6.dp).fillMaxHeight().background(accentColor(t.status, t.due_at)))
+            Column(Modifier.weight(1f).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(t.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    if (t.pending) Icon(Icons.Filled.CloudUpload, contentDescription = "Waiting to sync", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    StatusPill(t.status)
+                    formatDate(t.due_at)?.let { due ->
+                        val dateColor = if (overdue) Brand.Overdue else MaterialTheme.colorScheme.onSurfaceVariant
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.Event, null, Modifier.size(14.dp), tint = dateColor)
+                            Spacer(Modifier.width(4.dp))
+                            Text(if (overdue) "Overdue · $due" else "Due $due", style = MaterialTheme.typography.bodySmall, color = dateColor)
+                        }
                     }
                 }
             }
