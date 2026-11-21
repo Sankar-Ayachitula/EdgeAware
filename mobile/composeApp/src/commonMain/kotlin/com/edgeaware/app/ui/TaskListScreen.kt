@@ -54,6 +54,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -122,7 +123,7 @@ fun TaskListScreen(
                 if (shown.isEmpty()) {
                     EmptyState(if (tasks.isEmpty()) "No tasks assigned to you yet." else "No tasks in this list.")
                 } else {
-                    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(contentPadding = PaddingValues(horizontal = 18.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxSize()) {
                         items(shown, key = { it.id }) { TaskCard(it, onClick = { onOpen(it.id) }) }
                     }
                 }
@@ -166,12 +167,19 @@ private fun SyncBanner(status: SyncStatus, pending: Long, lastSyncAt: Long?) {
 @Composable
 private fun TaskCard(t: VisibleTasks, onClick: () -> Unit) {
     val overdue = isOverdue(t.due_at, t.status)
+    val shape = RoundedCornerShape(14.dp)
     Card(
         onClick = onClick,
-        shape = RoundedCornerShape(14.dp),
+        shape = shape,
         colors = CardDefaults.cardColors(containerColor = Brand.CardWhite),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp, pressedElevation = 8.dp),
-        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        // A soft, wide shadow on all sides so the white card floats on the white background.
+        modifier = Modifier.fillMaxWidth().shadow(
+            elevation = 10.dp,
+            shape = shape,
+            ambientColor = Color.Black.copy(alpha = 0.18f),
+            spotColor = Color.Black.copy(alpha = 0.28f),
+        ),
     ) {
         // IntrinsicSize.Min lets the strip stretch to the card's full height.
         Row(Modifier.height(IntrinsicSize.Min)) {
