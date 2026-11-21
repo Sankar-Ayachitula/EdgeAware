@@ -18,6 +18,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.flow.map
 import com.edgeaware.app.platform.PlatformBackHandler
 import com.edgeaware.app.platform.PlatformDeps
 import com.edgeaware.app.ui.AppViewModel
@@ -69,8 +70,9 @@ private fun AppContent(vm: AppViewModel) {
     val openId = openTaskId
     if (openId != null) {
         PlatformBackHandler(enabled = true) { openTaskId = null }
-        val task by remember(openId) { vm.task(openId) }.collectAsState(null)
-        TaskDetailScreen(task, snackbar, onBack = { openTaskId = null }, onSetStatus = { vm.setStatus(openId, it) })
+        // (task, loaded): the first value is a placeholder until the database answers.
+        val task by remember(openId) { vm.task(openId).map { it to true } }.collectAsState(null to false)
+        TaskDetailScreen(task.first, loading = !task.second, snackbar = snackbar, onBack = { openTaskId = null }, onSetStatus = { vm.setStatus(openId, it) })
         return
     }
 

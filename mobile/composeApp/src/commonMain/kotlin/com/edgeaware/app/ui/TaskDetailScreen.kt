@@ -39,6 +39,7 @@ import com.edgeaware.app.db.VisibleTask
 @Composable
 fun TaskDetailScreen(
     task: VisibleTask?,
+    loading: Boolean,
     snackbar: SnackbarHostState,
     onBack: () -> Unit,
     onSetStatus: (String) -> Unit,
@@ -53,6 +54,8 @@ fun TaskDetailScreen(
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
+        // Still reading it from the local database: show nothing rather than "not available".
+        if (loading) return@Scaffold
         if (task == null) {
             // Deleted or reassigned while open.
             Text("This task is no longer available.", Modifier.padding(padding).padding(24.dp))
