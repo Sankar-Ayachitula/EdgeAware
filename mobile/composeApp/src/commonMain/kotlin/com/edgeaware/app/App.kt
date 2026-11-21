@@ -1,9 +1,7 @@
 package com.edgeaware.app
 
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -12,23 +10,21 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.edgeaware.app.platform.PlatformBackHandler
 import com.edgeaware.app.platform.PlatformDeps
 import com.edgeaware.app.ui.AppViewModel
+import com.edgeaware.app.ui.EdgeAwareTheme
 import com.edgeaware.app.ui.LoginScreen
 import com.edgeaware.app.ui.TaskDetailScreen
 import com.edgeaware.app.ui.TaskListScreen
-
-private val colors = lightColorScheme(primary = Color(0xFF1F6FEB), secondary = Color(0xFF2E8540))
 
 @Composable
 fun App(deps: PlatformDeps) {
     val container = remember { AppContainer(deps) }
     val vm = viewModel { AppViewModel(container) }
 
-    MaterialTheme(colorScheme = colors) {
+    EdgeAwareTheme {
         Surface {
             val loggedIn by vm.loggedIn.collectAsState()
             if (!loggedIn) {

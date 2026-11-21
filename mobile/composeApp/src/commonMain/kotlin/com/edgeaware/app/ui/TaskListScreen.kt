@@ -79,15 +79,16 @@ fun TaskListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
+                colors = yellowTopBarColors(),
                 title = {
                     Column {
                         Text("My tasks")
-                        Text(username, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(username, style = MaterialTheme.typography.bodySmall, color = Brand.OnYellow.copy(alpha = 0.75f))
                     }
                 },
                 actions = {
                     IconButton(onClick = onSync, enabled = syncStatus != SyncStatus.Syncing) {
-                        if (syncStatus == SyncStatus.Syncing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        if (syncStatus == SyncStatus.Syncing) CircularProgressIndicator(Modifier.size(20.dp), color = Brand.OnYellow, strokeWidth = 2.dp)
                         else Icon(Icons.Filled.Sync, contentDescription = "Sync now")
                     }
                     Box {

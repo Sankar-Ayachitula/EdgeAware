@@ -45,6 +45,7 @@ fun TaskDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
+                colors = yellowTopBarColors(),
                 title = { Text("Task") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
             )

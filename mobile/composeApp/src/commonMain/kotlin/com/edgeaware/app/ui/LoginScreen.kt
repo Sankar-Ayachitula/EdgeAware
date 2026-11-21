@@ -1,6 +1,10 @@
 package com.edgeaware.app.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -49,7 +53,9 @@ fun LoginScreen(state: LoginUiState, onLogin: (server: String, user: String, pas
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(Icons.Filled.TaskAlt, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(56.dp))
+        Box(Modifier.size(88.dp).background(Brand.Yellow, CircleShape), contentAlignment = Alignment.Center) {
+            Icon(Icons.Filled.TaskAlt, contentDescription = null, tint = Brand.OnYellow, modifier = Modifier.size(52.dp))
+        }
         Spacer(Modifier.height(12.dp))
         Text("EdgeAware", style = MaterialTheme.typography.headlineMedium)
         Text("Your tasks, online or offline", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -74,8 +80,13 @@ fun LoginScreen(state: LoginUiState, onLogin: (server: String, user: String, pas
                 )
             }
             state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
-            Button(onClick = submit, enabled = !state.loading, modifier = Modifier.fillMaxWidth().height(48.dp)) {
-                if (state.loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Text("Log in")
+            Button(
+                onClick = submit,
+                enabled = !state.loading,
+                colors = ButtonDefaults.buttonColors(containerColor = Brand.Yellow, contentColor = Brand.OnYellow),
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+            ) {
+                if (state.loading) CircularProgressIndicator(Modifier.size(20.dp), color = Brand.OnYellow, strokeWidth = 2.dp) else Text("Log in")
             }
             TextButton(onClick = { showServer = !showServer }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
                 Text(if (showServer) "Hide server settings" else "Server settings")

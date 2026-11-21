@@ -13,11 +13,15 @@ fun statusLabel(status: String) = when (status) {
 }
 
 fun statusColor(status: String) = when (status) {
-    TaskStatus.TODO -> Color(0xFF5B6B7F)
-    TaskStatus.IN_PROGRESS -> Color(0xFF1F6FEB)
-    TaskStatus.DONE -> Color(0xFF2E8540)
+    TaskStatus.TODO -> Brand.New
+    TaskStatus.IN_PROGRESS -> Brand.Ongoing
+    TaskStatus.DONE -> Brand.Complete
     else -> Color.Gray
 }
+
+/** Card strip color: red once past the due date (unless done), otherwise the status color. */
+fun accentColor(status: String, dueIso: String?) =
+    if (isOverdue(dueIso, status)) Brand.Overdue else statusColor(status)
 
 private val months = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
