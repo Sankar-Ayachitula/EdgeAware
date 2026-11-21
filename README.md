@@ -7,6 +7,10 @@ Stack: Go standard-library router, GORM on PostgreSQL, JWT auth, bcrypt password
 
 The operator mobile app (Kotlin Multiplatform, Android and iOS) is in [mobile/](mobile/README.md).
 
+<p align="center">
+  <img src="mobile/docs/demo.gif" alt="Operator app: syncing, changing a task's status, filters, and the bottom tabs" width="300">
+</p>
+
 ## Run locally
 
 ```bash

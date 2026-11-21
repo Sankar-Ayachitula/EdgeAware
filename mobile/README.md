@@ -6,6 +6,10 @@ working offline; changes sync when the phone is back online.
 
 Stack: Compose Multiplatform, Ktor (HTTP), SQLDelight (local SQLite), kotlinx.serialization.
 
+<p align="center">
+  <img src="docs/demo.gif" alt="Operator app: syncing, changing a task's status, filters, and the bottom tabs" width="300">
+</p>
+
 ## What it does
 
 - **Log in** with an EdgeAware account. "Server settings" on the login screen changes the
